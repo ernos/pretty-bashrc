@@ -195,15 +195,31 @@ Set simpler colored prompt.
 setPrompt2    # Activates basic colored prompt
 ```
 
-### 🐍 Python Development Functions
+#### `setPrompt3`
 
-#### `create_and_activate_venv_here [venv_dir]`
-
-Create and activate Python virtual environment.
+Set a nice looking two line.
 
 ```bash
-create_and_activate_venv_here           # Creates .venv and activates it
-create_and_activate_venv_here myenv     # Creates myenv and activates it
+setPrompt3    # Activates basic colored prompt
+```
+
+#### `setPrompt4`
+
+Set colored prompt.
+
+```bash
+setPrompt4   # Activates basic colored prompt
+```
+
+### 🐍 Python Development Functions
+
+#### `venv [venv_dir]`
+
+Create+activate or activate Python virtual environment argument1. Defaults to .venv if nothing is specified..
+
+```bash
+venv           # Creates .venv and activates it
+venv myenv     # Creates myenv and activates it
 ```
 
 ### 🌐 Network & System Information

@@ -50,8 +50,6 @@ export VISUAL=geany
 USERNAME = $(whoami)
 export HOME="/home/$USERNAME"
 
-source /home/nop/.bashfuncs
-
 # make less more friendly for non-text input files, see lesspipe(1)
 [ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
 
@@ -78,8 +76,6 @@ fi
 
 #try setPrompt2 as well if you dont like it.
 setPrompt1
-
-export ANDROID_SDK_ROOT="/home/nop/Android/Sdk"
 
 # enable color support of ls and also add handy aliases
 if [ -x /usr/bin/dircolors ]; then
@@ -168,3 +164,6 @@ alias logs="sudo find /var/log -type f -exec file {} \; | grep 'text' | cut -d' 
 
 # SHA1
 alias sha1='openssl sha1'
+
+setPrompt3
+bashrchelp

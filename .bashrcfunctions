@@ -1,17 +1,21 @@
-#!/bin/bash
-# Search for files by name    local BOLD="\e[1m"
-RESET="\e[0m"
-BOLD="\e[1m"
-RED="\e[31m"
-GREEN="\e[32m"
-YELLOW="\e[33m"
-BLUE="\e[34m"
 
-video_rotate_save_meta() {
-    local YELLOW="\e[33m"
-    local RESET="\e[0m"
-    local GREEN="\e[32m"
-    local BLUE="\e[34m"
+RESET="\[\e[0m\]"
+BOLD="\[\e[1m\]"
+RED="\[\e[31m\]"
+GREEN="\[\e[32m\]"
+YELLOW="\[\e[33m\]"
+BLUE="\[\e[34m\]"
+MAGENTA="\[\e[35m\]"
+CYAN="\[\e[36m\]"
+WHITE="\[\e[37m\]"
+BG_GRAY="\[\e[48;5;236m\]"
+BG_BLUE="\[\e[48;5;24m\]"
+BG_GREEN="\[\e[48;5;22m\]"
+BG_MAGENTA="\[\e[48;5;53m\]"
+
+############### VIDEO EDITING ######################
+# Will simply change the exif metadata "Rotation" of a video file. Not always supported
+function video_rotate_exif() {
     local rotation=0
     local retstr=$(exiftool -a -u -g1 "$1")
     local final=$(echo "$retstr" | grep Rotation --color=always)
@@ -31,8 +35,50 @@ video_rotate_save_meta() {
     fi
 
 }
+#These functions will actually re-encode the video file to rotate it
+function video_rotate_90(){
+    if [[ "$1" == "-h" ]]; then
+        echo "video_rotate_90 <INPUT.mp4> <OUTPUT.mp4> <FAKE-ROTATE>"
+        echo "    Rotates video 90 degrees clockwise, also check out:"
+        echo "      If 3rd argument is set to 'fake', will only change "
+        echo "      metadata not actually recode the video file, also check out:"
+        echo "      video_rotate_270"
+        echo "      rotate_video_180"
+    fi
+    if [[ "$3" == "fake" ]]; then
+        ffmpeg -i input.mp4 -c copy -metadata:s:v:0 rotate=90 output.mp4
+    else
+        ffmpeg -i "$1" -vf "transpose=1" "$2"
+    fi
+}
+function video_rotate_180(){
+    if [[ "$1" == "-h" ]]; then
+        echo "video_rotate_180 <INPUT.mp4> <OUTPUT.mp4>"
+        echo "      Rotates video 180 degrees, also:"
+        echo "      video_rotate_90"
+        echo "      video_rotate_270"
+    fi
+    if [[ "$3" == "fake" ]]; then
+        ffmpeg -i input.mp4 -c copy -metadata:s:v:0 rotate=180 output.mp4
+    else
+        ffmpeg -i "$1" -vf "transpose=2,transpose=2" "$2"
+    fi
+}
+function video_rotate_270(){
+    if [[ "$1" == "-h" ]]; then
+        echo "video_rotate_270 <INPUT.mp4> <OUTPUT.mp4>"
+        echo "      Rotates video 90 degrees anti-clockwise, also check out:"
+        echo "      video_rotate_90"
+        echo "      video_rotate_270"
+    fi
+    if [[ "$3" == "fake" ]]; then
+        ffmpeg -i input.mp4 -c copy -metadata:s:v:0 rotate=270 output.mp4
+    else
+        ffmpeg -i "$1" -vf "transpose=2" "$2"
+    fi
+}
 
-searchf() {
+function searchf() {
     if [ $# -eq 0 ]; then
         echo "Usage: searchf <filename_pattern>"
         echo "Examples:"
@@ -63,7 +109,7 @@ searchf() {
 }
 
 # Search for strings inside files
-searchinf() {
+function searchinf() {
     if [ $# -eq 0 ]; then
         echo "Usage: searchinf <search_string> [file_pattern]"
         echo "Examples:"
@@ -146,48 +192,7 @@ function manfind(){
 
     $(echo $FIRSTCMD) | $SECONDCMD
 }
-function rotate_video_90_cw(){
-    if [[ "$1" == "-h" ]]; then
-        echo "rotate <INPUT.mp4> <OUTPUT.mp4> <FAKE-ROTATE>"
-        echo "    Rotates video 90 degrees clockwise, also check out:"
-        echo "      If 3rd argument is set to 'fake', will only change "
-        echo "      metadata not actually recode the video file, also check out:"
-        echo "      rotate_video_90_anti_cw"
-        echo "      rotate_video_180"
-    fi
-    if [[ "$3" == "fake" ]]; then
-        ffmpeg -i input.mp4 -c copy -metadata:s:v:0 rotate=90 output.mp4
-    else
-        ffmpeg -i "$1" -vf "transpose=1" "$2"
-    fi
-}
-function rotate_video_90_anti_cw(){
-    if [[ "$1" == "-h" ]]; then
-        echo "rotate <INPUT.mp4> <OUTPUT.mp4>"
-        echo "      Rotates video 90 degrees clockwise, also check out:"
-        echo "      rotate_video_90_acw"
-        echo "      rotate_video_180"
-    fi
-    if [[ "$3" == "fake" ]]; then
-        ffmpeg -i input.mp4 -c copy -metadata:s:v:0 rotate=270 output.mp4
-    else
-        ffmpeg -i "$1" -vf "transpose=2" "$2"
-    fi
-}
 
-function rotate_video_180(){
-    if [[ "$1" == "-h" ]]; then
-        echo "rotate <INPUT.mp4> <OUTPUT.mp4>"
-        echo "      Rotates video 90 degrees clockwise, also check out:"
-        echo "      rotate_video_90_acw"
-        echo "      rotate_video_180"
-    fi
-    if [[ "$3" == "fake" ]]; then
-        ffmpeg -i input.mp4 -c copy -metadata:s:v:0 rotate=180 output.mp4
-    else
-        ffmpeg -i "$1" -vf "transpose=2,transpose=2" "$2"
-    fi
-}
 function xman(){
     killall -9 yelp
     yelp man:$1 &
@@ -339,46 +344,27 @@ function fixpermissions() {
     echo -e "${GREEN}Files: ${BLUE}$FILEPERMISSIONS${RESET}, Folders: ${BLUE}$FOLDERPERMISSIONS${RESET}, Owner: ${BLUE}$USER${RESET}"
 }
 
-
+# Short path (last two segments)
+function shortpart(){
+    local IFS='/'
+    read -ra ADDR <<< "$PWD"
+    local len=${#ADDR[@]}
+    if (( len > 2 )); then
+        echo "${ADDR[len-2]}/${ADDR[len-1]}"
+    else
+        echo "$PWD"
+    fi
+}
+# function to set terminal title
+function set_window_title(){
+    if [[ -z "$ORIG" ]]; then
+        ORIG=$PS1
+    fi
+    TITLE="\[\e]2;$*\a\]"
+    PS1+=${TITLE}
+}
 function setPrompt1(){
-	local RESET="\[\e[0m\]"
-	local BOLD="\[\e[1m\]"
-	local RED="\[\e[31m\]"
-	local GREEN="\[\e[32m\]"
-	local YELLOW="\[\e[33m\]"
-	local BLUE="\[\e[34m\]"
-	local MAGENTA="\[\e[35m\]"
-	local CYAN="\[\e[36m\]"
-	local WHITE="\[\e[37m\]"
-	local BG_GRAY="\[\e[48;5;236m\]"
-	local BG_BLUE="\[\e[48;5;24m\]"
-	local BG_GREEN="\[\e[48;5;22m\]"
-	local BG_MAGENTA="\[\e[48;5;53m\]"
-
 	PS1=""
-	# Short path (last two segments)
-	function shortpart(){
-		local IFS='/'
-		read -ra ADDR <<< "$PWD"
-		local len=${#ADDR[@]}
-		if (( len > 2 )); then
-			echo "${ADDR[len-2]}/${ADDR[len-1]}"
-		else
-			echo "$PWD"
-		fi
-	}
-	# function to set terminal title
-	function set_window_title(){
-		if [[ -z "$ORIG" ]]; then
-			ORIG=$PS1
-		fi
-		TITLE="\[\e]2;$*\a\]"
-		PS1+=${TITLE}
-	}
-
-    LANIP="enp0s31f6"
-    LOCALIP=$(/sbin/ifconfig $LANIP | grep "inet $LANIP" | awk -F: '{print $2}' | awk '{print $1}')
-
 	# Set window title to a plain version
 	local plain_title="${USER}@${HOSTNAME}: /$(shortpart)"
 	WHITE_ON_BLUE="\e[0;37;44m"
@@ -395,47 +381,218 @@ function setPrompt1(){
 }
 
 function setPrompt2(){
-
-	PS1=""
-	# Short path (last two segments)
-	function shortpart(){
-		local IFS='/'
-		read -ra ADDR <<< "$PWD"
-		local len=${#ADDR[@]}
-		if (( len > 2 )); then
-			echo "${ADDR[len-2]}/${ADDR[len-1]}"
-		else
-			echo "$PWD"
-		fi
-	}
-	# function to set terminal title
-	function set_window_title(){
-		if [[ -z "$ORIG" ]]; then
-			ORIG=$PS1
-		fi
-		TITLE="\[\e]2;$*\a\]"
-		PS1+=${TITLE}
-	}
-
-
 		# Set window title to a plain version
 	local plain_title="${USER}@${HOSTNAME}: /$(shortpart)"
-
 	local weekday=$(date +%a)
-
-    # Color codes
-    CYAN='\[\e[1;36m\]'
-    YELLOW='\[\e[0;33m\]'
-    GREEN='\[\e[0;32m\]'
-    RED='\[\e[0;31m\]'
-    RESET='\[\e[0m\]'
-
     # PS1 Prompt
-    export PS1="${GREEN}\u@\h ${CYAN}\w ${YELLOW}\A ${RED}\$ ${RESET}"
+    PS1="${GREEN}\u@\h ${CYAN}\w ${YELLOW}\A ${RED}\$ ${RESET}"
+
+}
+# Git branch function
+git_branch() {
+    local branch
+    if branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); then
+        if [[ $branch == "HEAD" ]]; then
+            branch='detached*'
+        fi
+        echo " (${branch})"
+    fi
+}
+
+# Git status function
+git_status() {
+    local status
+    if git rev-parse --git-dir >/dev/null 2>&1; then
+        if ! git diff --quiet 2>/dev/null; then
+            echo "*"  # Uncommitted changes
+        elif ! git diff --cached --quiet 2>/dev/null; then
+            echo "+"  # Staged changes
+        fi
+    fi
+}
+
+# Function to get current time
+current_time() {
+    date +"%H:%M:%S"
+}
+
+# Function to show exit status of last command
+last_status() {
+    local status=$?
+    if [ $status -eq 0 ]; then
+        echo -e "${GREEN}✓${RESET}"
+    else
+        echo -e "${RED}✗($status)${RESET}"
+    fi
+}
+# Short path (last two segments)
+function shortpart(){
+    local IFS='/'
+    read -ra ADDR <<< "$PWD"
+    local len=${#ADDR[@]}
+    if (( len > 2 )); then
+        echo "${ADDR[len-2]}/${ADDR[len-1]}"
+    else
+        echo "$PWD"
+    fi
+}
+# function to set terminal title
+function set_window_title(){
+    if [[ -z "$ORIG" ]]; then
+        ORIG=$PS1
+    fi
+    TITLE="\[\e]2;$*\a\]"
+    PS1+=${TITLE}
+}
+# Git branch function
+git_branch() {
+    local branch
+    if branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); then
+        if [[ $branch == "HEAD" ]]; then
+            branch='detached*'
+        fi
+        echo " (${branch})"
+    fi
+}
+
+# Git status function
+git_status() {
+    local status
+    if git rev-parse --git-dir >/dev/null 2>&1; then
+        if ! git diff --quiet 2>/dev/null; then
+            echo "*"  # Uncommitted changes
+        elif ! git diff --cached --quiet 2>/dev/null; then
+            echo "+"  # Staged changes
+        fi
+    fi
+}
+
+# Function to get current time
+current_time() {
+    date +"%H:%M:%S"
+}
+
+# Function to show exit status of last command
+last_status() {
+    local status=$?
+    if [ $status -eq 0 ]; then
+        echo -e "${GREEN}✓${RESET}"
+    else
+        echo -e "${RED}✗($status)${RESET}"
+    fi
+}
+
+function setPrompt1(){
+	PS1=""
+	# Set window title to a plain version
+	local plain_title="${USER}@${HOSTNAME}: /$(shortpart)"
+	WHITE_ON_BLUE="\e[0;37;44m"
+    YELLOW_ON_BLUE="\e[1;33;44m"
+	GREEN_ON_BLUE="\e[0;32;44m"
+	WHITE_ON_GREEN="\e[1;37;42m"
+	BLUE_ON_WHITE="\e[1;34;47m"
+	GREEN_ON_GRAY="\e[0;32;40m"
+    PS1="${WHITE_ON_BLUE}${BOLD} ${weekday} | ${RESET}"
+    PS1+="${YELLOW_ON_BLUE} \t ${RESET}"
+    PS1+="${WHITE_ON_GREEN}${BOLD} ${USER} ${RESET}"
+    PS1+="${GREEN_ON_GRAY}${CYAN}@\w:${RESET}"
+    PS1+="${BOLD}${GREEN_ON_GREY}❯${RESET}"
+}
+
+function setPrompt2(){
+		# Set window title to a plain version
+	local plain_title="${USER}@${HOSTNAME}: /$(shortpart)"
+	local weekday=$(date +%a)
+    # PS1 Prompt
+    PS1="${GREEN}\u@\h ${CYAN}\w ${YELLOW}\A ${RED}\$ ${RESET}"
 
 }
 
-function bashrcHelp(){
+function setPrompt3() {
+    local status="$(last_status)"
+    local time="${CYAN}[$(current_time)]${RESET}"
+    local user_host="${GREEN}${BOLD}\u${RESET}@${YELLOW}${BOLD}\h${RESET}"
+    local path="${BLUE}${BOLD}\w${RESET}"
+    local git_info="${PURPLE}$(git_branch)${RED}$(git_status)${RESET}"
+    
+    # Multi-line prompt for better readability
+    PS1="${time} ${status} ${user_host}:${path}${git_info}
+${WHITE}${BOLD}└─▶${RESET} "
+}
+
+function setPrompt4(){
+    # A polished, dynamic prompt:
+    # - Shows last command exit code (when non-zero)
+    # - Shows user@host, short cwd, time
+    # - Shows git branch and dirty/clean marker
+    # - Uses PROMPT_COMMAND to rebuild PS1 every prompt (safe, efficient)
+
+    __prompt4(){
+        # Colors (use bracketed sequences so bash calculates length correctly)
+        local RESET='\[\e[0m\]'
+        local BOLD='\[\e[1m\]'
+        local RED='\[\e[0;31m\]'
+        local GREEN='\[\e[0;32m\]'
+        local YELLOW='\[\e[0;33m\]'
+        local BLUE='\[\e[0;34m\]'
+        local MAGENTA='\[\e[0;35m\]'
+        local CYAN='\[\e[1;36m\]'
+
+        # Capture last exit code
+        local EXIT_CODE=$?
+        local EXIT_SEG=""
+        if [[ $EXIT_CODE -ne 0 ]]; then
+            EXIT_SEG="${RED}[${EXIT_CODE}]${RESET} "
+        fi
+
+        # Shorten path to last two segments
+        local PWD_SHORT
+        IFS='/' read -ra __p <<< "$PWD"
+        if (( ${#__p[@]} > 2 )); then
+            PWD_SHORT="${__p[${#__p[@]}-2]}/${__p[${#__p[@]}-1]}"
+        else
+            PWD_SHORT="$PWD"
+        fi
+
+        # Git branch and dirty/clean marker
+        local GIT_SEG=""
+        if command -v git >/dev/null 2>&1; then
+            if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                local BRANCH
+                BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+                if [[ -n "$BRANCH" ]]; then
+                    local GIT_DIRTY
+                    GIT_DIRTY=$(git status --porcelain 2>/dev/null)
+                    if [[ -n "$GIT_DIRTY" ]]; then
+                        GIT_SEG=" ${MAGENTA}(${BRANCH}${YELLOW}✗${MAGENTA})${RESET}"
+                    else
+                        GIT_SEG=" ${MAGENTA}(${BRANCH}${GREEN}✓${MAGENTA})${RESET}"
+                    fi
+                fi
+            fi
+        fi
+
+        # Determine prompt symbol (# for root, $ for normal)
+        local SYMBOL
+        if [[ $EUID -eq 0 ]]; then
+            SYMBOL="#"
+        else
+            SYMBOL="$"
+        fi
+
+        # Compose the prompt across two lines
+        PS1=""
+        PS1+="${EXIT_SEG}${BOLD}${BLUE}\u@\h${RESET} "
+        PS1+="${CYAN}${PWD_SHORT}${RESET}${GIT_SEG} "
+        PS1+="${YELLOW}\A${RESET}\n"
+        PS1+="${BOLD}${GREEN}❯ ${RESET}${SYMBOL} "
+    }
+
+    # Activate the prompt generator
+    PROMPT_COMMAND=__prompt4
+}
+
+function bashrchelp(){
     # Define colors for better readability
     local BOLD="\e[1m"
     local BLUE="\e[34m"
@@ -538,19 +695,20 @@ shredfolder() {
     echo "Done. All files shredded and folder deleted."
 }
 
-create_and_activate_venv_here() {
+venv() {
     if [[ "$1" == "-h" || "$1" == "--help" ]]; then
-        echo "Usage: create_and_activate_venv_here [venv_dir]"
+        echo "Usage: venv [venv_dir]"
         echo ""
         echo "Creates a Python virtual environment in the specified directory and activates it."
-        echo "If venv_dir is not provided, it defaults to '.venv'."
+        echo "  If venv_dir is not provided, it defaults to '.venv'."
+        echo "  If venv_dir already exists, it will simply activate it."
         echo ""
-        echo "Requirements:"
-        echo "  - Python 3 must be installed and available in PATH."
+        echo "  Requirements:"
+        echo "      - Python 3 must be installed and available in PATH."
         echo ""
-        echo "Examples:"
-        echo "  create_and_activate_venv_here          # Creates and activates .venv"
-        echo "  create_and_activate_venv_here myenv    # Creates and activates myenv"
+        echo "  Examples:"
+        echo "      create_and_activate_venv_here          # Creates and activates .venv"
+        echo "      create_and_activate_venv_here myenv    # Creates and activates myenv"
         return 0
     fi
 
@@ -583,82 +741,86 @@ create_and_activate_venv_here() {
 
     echo -e "Virtual environment: $1 has been created and activated.\nPath to venv: $venv_dir."
 }
-# ============================================================================
-# JSON GENERATOR FUNCTION
-# ============================================================================
-#
-# DESCRIPTION:
-#   A powerful bash function that converts key-value pairs into properly
-#   formatted JSON output using jq. The function intelligently detects data
-#   types and formats them correctly in the resulting JSON.
-#
-# USAGE:
-#   json key1 value1 key2 value2 [key3 value3 ...]
-#
-# PARAMETERS:
-#   Takes an even number of arguments where each pair represents:
-#   - Odd arguments (1st, 3rd, 5th...): JSON keys (strings)
-#   - Even arguments (2nd, 4th, 6th...): JSON values (auto-typed)
-#
-# DATA TYPE DETECTION:
-#   The function automatically detects and properly formats these data types:
-#
-#   INTEGERS:     Numbers without decimal points (e.g., 42, -15, 0)
-#   FLOATS:       Numbers with decimal points (e.g., 3.14, -0.5, 19.99)
-#   BOOLEANS:     true/TRUE/True/false/FALSE/False (case-insensitive)
-#   NULL:         The literal string "null"
-#   STRINGS:      Everything else, including:
-#                 - Text with spaces: "Hello World"
-#                 - Numbers with leading zeros: "001", "007"
-#                 - Phone numbers: "123-456-7890"
-#                 - Version strings: "2.0.1"
-#                 - Special characters: "@#$%^&*()"
-#
-# EXAMPLES:
-#   # Simple string and number
-#   json name "John Doe" age 30
-#   # Output: {"name": "John Doe", "age": 30}
-#
-#   # Mixed data typestr -s /'\n/' " "
-#   json user "Alice" active true score 95.5 email null
-#   # Output: {"user": "Alice", "active": true, "score": 95.5, "email": null}
-#
-#   # Preserving leading zeros and special formats
-#   json id "001" phone "555-1234" version "2.0.1"
-#   # Output: {"id": "001", "phone": "555-1234", "version": "2.0.1"}
-#
-#   # Boolean variations (all case-insensitive)
-#   json verified TRUE completed false pending True
-#   # Output: {"verified": true, "completed": false, "pending": true}
-#
-#   # Empty JSON object
-#   json
-#   # Output: {}
-#
-# FEATURES:
-#   ✓ Automatic data type detection and conversion
-#   ✓ Proper JSON escaping for strings with quotes and special characters
-#   ✓ Handles negative numbers and floating-point values
-#   ✓ Case-insensitive boolean detection
-#   ✓ Preserves leading zeros in strings (e.g., "001" stays as string)
-#   ✓ Error handling for odd number of arguments
-#   ✓ Clean, formatted JSON output via jq
-#   ✓ Support for null values
-#   ✓ No limit on number of key-value pairs
-#
-# ERROR HANDLING:
-#   - If an odd number of arguments is provided, a warning is displayed
-#     and the orphaned key is ignored
-#   - Invalid input is gracefully handled with informative error messages
-#
-# DEPENDENCIES:
-#   Requires 'jq' to be installed and available in PATH
-#
-# RETURN VALUE:
-#   Outputs valid JSON to stdout, or "{}" for empty input
-#
-# ============================================================================
+
 json-generator() {
+    if [[ "$1" == "-h" || "$1" == "--help" || "$1" == "" ]]; then
+        echo '# ============================================================================'
+        echo '# JSON GENERATOR FUNCTION'
+        echo '# ============================================================================'
+        echo '#'
+        echo '# DESCRIPTION:'
+        echo '#   A powerful bash function that converts key-value pairs into properly'
+        echo '#   formatted JSON output using jq. The function intelligently detects data'
+        echo '#   types and formats them correctly in the resulting JSON.'
+        echo '#'
+        echo '# USAGE:'
+        echo '#   json key1 value1 key2 value2 [key3 value3 ...]'
+        echo '#'
+        echo '# PARAMETERS:'
+        echo '#   Takes an even number of arguments where each pair represents:'
+        echo '#   - Odd arguments (1st, 3rd, 5th...): JSON keys (strings)'
+        echo '#   - Even arguments (2nd, 4th, 6th...): JSON values (auto-typed)'
+        echo '#'
+        echo '# DATA TYPE DETECTION:'
+        echo '#   The function automatically detects and properly formats these data types:'
+        echo '#'
+        echo '#   INTEGERS:     Numbers without decimal points (e.g., 42, -15, 0)'
+        echo '#   FLOATS:       Numbers with decimal points (e.g., 3.14, -0.5, 19.99)'
+        echo '#   BOOLEANS:     true/TRUE/True/false/FALSE/False (case-insensitive)'
+        echo '#   NULL:         The literal string "null"'
+        echo '#   STRINGS:      Everything else, including:'
+        echo '#                 - Text with spaces: "Hello World"'
+        echo '#                 - Numbers with leading zeros: "001", "007"'
+        echo '#                 - Phone numbers: "123-456-7890"'
+        echo '#                 - Version strings: "2.0.1"'
+        echo '#                 - Special characters: "@#$%^&*()"'
+        echo '#'
+        echo '# EXAMPLES:'
+        echo '#   # Simple string and number'
+        echo '#   json name "John Doe" age 30'
+        echo '#   # Output: {"name": "John Doe", "age": 30}'
+        echo '#'
+        echo '#   # Mixed data typestr -s /'\n/' " "'
+        echo '#   json user "Alice" active true score 95.5 email null'
+        echo '#   # Output: {"user": "Alice", "active": true, "score": 95.5, "email": null}'
+        echo '#'
+        echo '#   # Preserving leading zeros and special formats'
+        echo '#   json id "001" phone "555-1234" version "2.0.1"'
+        echo '#   # Output: {"id": "001", "phone": "555-1234", "version": "2.0.1"}'
+        echo '#'
+        echo '#   # Boolean variations (all case-insensitive)'
+        echo '#   json verified TRUE completed false pending True'
+        echo '#   # Output: {"verified": true, "completed": false, "pending": true}'
+        echo '#'
+        echo '#   # Empty JSON object'
+        echo '#   json'
+        echo '#   # Output: {}'
+        echo '#'
+        echo '# FEATURES:'
+        echo '#   ✓ Automatic data type detection and conversion'
+        echo '#   ✓ Proper JSON escaping for strings with quotes and special characters'
+        echo '#   ✓ Handles negative numbers and floating-point values'
+        echo '#   ✓ Case-insensitive boolean detection'
+        echo '#   ✓ Preserves leading zeros in strings (e.g., "001" stays as string)'
+        echo '#   ✓ Error handling for odd number of arguments'
+        echo '#   ✓ Clean, formatted JSON output via jq'
+        echo '#   ✓ Support for null values'
+        echo '#   ✓ No limit on number of key-value pairs'
+        echo '#'
+        echo '# ERROR HANDLING:'
+        echo '#   - If an odd number of arguments is provided, a warning is displayed'
+        echo '#     and the orphaned key is ignored'
+        echo '#   - Invalid input is gracefully handled with informative error messages'
+        echo '#'
+        echo '# DEPENDENCIES:'
+        echo '#   Requires 'jq' to be installed and available in PATH'
+        echo '#'
+        echo '# RETURN VALUE:'
+        echo '#   Outputs valid JSON to stdout, or "{}" for empty input'
+        echo '#'
+        echo '# ============================================================================'
+        return 0
+    fi
     local -a jq_args=()    # Stores --arg key1 val1 --arg key2 val2 ...
     local -a jq_fields=()  # Stores "key1": $key1, "key2": ($key2 | tonumber), etc.
 
@@ -814,24 +976,9 @@ extract () {
         fi
     done
 }
-# Show current network information
-netinfo()
-{
-	echo "--------------- Network Information ---------------"
-	/sbin/ifconfig | awk '/inet / {print $2}'
-	echo ""
-	/sbin/ifconfig | awk '/BCast / {print $2}'
-	echo ""
-	/sbin/ifconfig | awk /'inet / {print $4}'
 
-	/sbin/ifconfig | awk /'HWaddr/ {print $4,$5}'
-	echo "---------------------------------------------------"
-}
-
-# IP address lookup
-alias whatismyip="whatsmyip"
-function whatsmyip()
-{
+# Public IP address lookup through api
+function whatsmyip() {
 	# Dumps a list of all IP addresses for every device
 	# /sbin/ifconfig |grep -B1 "inet addr" |awk '{ if ( $1 == "inet" ) { print $2 } else if ( $2 == "Link" ) { printf "%s:" ,$1 } }' |awk -F: '{ print $1 ": " $3 }';
 
