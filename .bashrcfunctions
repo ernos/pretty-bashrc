@@ -1,0 +1,843 @@
+#!/bin/bash
+# Search for files by name    local BOLD="\e[1m"
+RESET="\e[0m"
+BOLD="\e[1m"
+RED="\e[31m"
+GREEN="\e[32m"
+YELLOW="\e[33m"
+BLUE="\e[34m"
+
+video_rotate_save_meta() {
+    local YELLOW="\e[33m"
+    local RESET="\e[0m"
+    local GREEN="\e[32m"
+    local BLUE="\e[34m"
+    local rotation=0
+    local retstr=$(exiftool -a -u -g1 "$1")
+    local final=$(echo "$retstr" | grep Rotation --color=always)
+    if [[ "$2" == "" ]]; then
+        echo -e "${YELLOW}No second argument specified!(Degrees)${RESET}"
+        echo -e "${BLUE}Showing rotation metadata for${RESET}: $1"
+        echo "Rotation: $final"
+    else
+        rotation=$2
+        if [[ -f "$1" ]]; then
+            echo -e "${GREEN}Saving rotation${RESET} metadata($2degrees) to file $1"
+            exiftool -Rotation=$2 "$1"
+            echo "Rotation: $final"
+        else
+            echo "File does not exist: $1"
+        fi
+    fi
+
+}
+
+searchf() {
+    if [ $# -eq 0 ]; then
+        echo "Usage: searchf <filename_pattern>"
+        echo "Examples:"
+        echo "  searchf 'config'      # Find files with 'config' in name"
+        echo "  searchf '*.php'       # Find all PHP files"
+        echo "  searchf 'index.*'     # Find all index files"
+        echo "  searchf '*log*'       # Find files with 'log' in name"
+        return 1
+    fi
+
+    local pattern="$1"
+
+    echo "Searching for files matching: '$pattern'"
+    echo "----------------------------------------"
+
+    # Find files by name pattern
+    find . -type f -name "*$pattern*" 2>/dev/null | while read -r file; do
+        # Get file size in human readable format
+        local size=$(ls -lh "$file" 2>/dev/null | awk '{print $5}')
+        local perms=$(ls -l "$file" 2>/dev/null | awk '{print $1}')
+        echo "� $file [$size] ($perms)" | grep $pattern
+    done
+
+    # Count results
+    local count=$(find . -type f -name "*$pattern*" 2>/dev/null | wc -l)
+    echo "----------------------------------------"
+    echo "Found $count file(s) matching '$pattern'" | grep "$pattern"
+}
+
+# Search for strings inside files
+searchinf() {
+    if [ $# -eq 0 ]; then
+        echo "Usage: searchinf <search_string> [file_pattern]"
+        echo "Examples:"
+        echo "  searchinf 'function'         # Search for 'function' in all files"
+        echo "  searchinf 'PDO' '*.php'      # Search for 'PDO' in PHP files"
+        echo "  searchinf 'console.log' '*.js' # Search in JavaScript files"
+        echo "  searchinf 'ERROR' '*.log'    # Search for errors in log files"
+        echo "  searchinf 'config' -i        # Case-insensitive search"
+        return 1
+    fi
+
+    local search_term="$1"
+    local file_pattern="${2:-*}"
+    local grep_options="-n --color=always"
+
+    # Check if case-insensitive flag is provided
+    if [[ "$2" == "-i" ]] || [[ "$3" == "-i" ]]; then
+        grep_options="$grep_options -i"
+        if [[ "$2" == "-i" ]]; then
+            file_pattern="*"
+        fi
+    fi
+
+    echo "🔍 Searching for '$search_term' in files matching '$file_pattern'..."
+    echo "========================================================"
+
+    local found_files=0
+    local total_matches=0
+
+    # Find files and search within them
+    find . -type f -name "$file_pattern" 2>/dev/null | while read -r file; do
+        # Check if file contains the search term
+        if grep -q $grep_options "$search_term" "$file" 2>/dev/null; then
+            found_files=$((found_files + 1))
+            echo -e "\n📁 \033[1;36m$file\033[0m"
+            echo "----------------------------------------"
+
+            # Show matches with line numbers and context
+            local file_matches=$(grep -c "$search_term" "$file" 2>/dev/null)
+            total_matches=$((total_matches + file_matches))
+
+
+            # Use grep with color and line numbers (limit to first 15 matches per file)
+            grep $grep_options -B1 -A1 -m 15 "$search_term" "$file" 2>/dev/null
+
+            # If more than 20 lines of matches, show count
+            local match_count=$(grep -c "$search_term" "$file" 2>/dev/null)
+            if [ "$match_count" -gt 10 ]; then
+                echo "... (showing first matches, total: $match_count matches in this file)"
+            fi
+        fi
+    done
+
+    # Summary
+    echo -e "\n========================================================"
+    echo "🎯 Search completed for: '$search_term'"
+
+    # Count total files and matches
+    local total_files=$(find . -type f -name "$file_pattern" 2>/dev/null | wc -l)
+    local files_with_matches=$(find . -type f -name "$file_pattern" -exec grep -l "$search_term" {} \; 2>/dev/null | wc -l)
+    local total_match_count=$(find . -type f -name "$file_pattern" -exec grep -c "$search_term" {} \; 2>/dev/null | awk '{sum+=$1} END {print sum}')
+
+    echo "📊 Found in $files_with_matches out of $total_files files"
+    echo "📈 Total matches: $total_match_count"
+}
+
+function manfind(){
+    if [[ "$1" == "-h" ]]; then
+        echo "manfind <MANDOC> <STR>"
+        echo "      Searches for first occurance of <STR> in <MANDOC>"
+        echo "      aliases: manstr,manjump,findinman"
+    fi
+    MANPAGE="$1"
+    SEARCHSTR="$2"
+
+    echo "Opening man page: $MANPAGE and jumping to first occurance of '$SEARCHSTR'"
+
+    FIRSTCMD="man $MANPAGE"
+    SECONDCMD="less +/$SEARCHSTR"
+
+    $(echo $FIRSTCMD) | $SECONDCMD
+}
+function rotate_video_90_cw(){
+    if [[ "$1" == "-h" ]]; then
+        echo "rotate <INPUT.mp4> <OUTPUT.mp4> <FAKE-ROTATE>"
+        echo "    Rotates video 90 degrees clockwise, also check out:"
+        echo "      If 3rd argument is set to 'fake', will only change "
+        echo "      metadata not actually recode the video file, also check out:"
+        echo "      rotate_video_90_anti_cw"
+        echo "      rotate_video_180"
+    fi
+    if [[ "$3" == "fake" ]]; then
+        ffmpeg -i input.mp4 -c copy -metadata:s:v:0 rotate=90 output.mp4
+    else
+        ffmpeg -i "$1" -vf "transpose=1" "$2"
+    fi
+}
+function rotate_video_90_anti_cw(){
+    if [[ "$1" == "-h" ]]; then
+        echo "rotate <INPUT.mp4> <OUTPUT.mp4>"
+        echo "      Rotates video 90 degrees clockwise, also check out:"
+        echo "      rotate_video_90_acw"
+        echo "      rotate_video_180"
+    fi
+    if [[ "$3" == "fake" ]]; then
+        ffmpeg -i input.mp4 -c copy -metadata:s:v:0 rotate=270 output.mp4
+    else
+        ffmpeg -i "$1" -vf "transpose=2" "$2"
+    fi
+}
+
+function rotate_video_180(){
+    if [[ "$1" == "-h" ]]; then
+        echo "rotate <INPUT.mp4> <OUTPUT.mp4>"
+        echo "      Rotates video 90 degrees clockwise, also check out:"
+        echo "      rotate_video_90_acw"
+        echo "      rotate_video_180"
+    fi
+    if [[ "$3" == "fake" ]]; then
+        ffmpeg -i input.mp4 -c copy -metadata:s:v:0 rotate=180 output.mp4
+    else
+        ffmpeg -i "$1" -vf "transpose=2,transpose=2" "$2"
+    fi
+}
+function xman(){
+    killall -9 yelp
+    yelp man:$1 &
+}
+
+# Security Quick-Check Toolkit for Ubuntu Desktop
+
+# 1. Kernel taint and Secure Boot
+function kernelTainted() {
+    echo "== Kernel Taint Flags =="
+    cat /proc/sys/kernel/tainted
+    sudo dmesg | grep -i taint | tail -n 20
+    echo "== Secure Boot Status =="
+    mokutil --sb-state
+}
+
+# 2. SUID/SGID files (possible privilege escalation risk)
+function findSuidSgidfiles() {
+    echo "== SUID Files =="
+    sudo find / -xdev -perm -4000 -type f -ls 2>/dev/null | sort
+    echo "== SGID Files =="
+    sudo find / -xdev -perm -2000 -type f -ls 2>/dev/null | sort
+}
+
+# 3. List listeners (check for unexpected open network ports)
+function listListeners() {
+    echo "== Active Network Listeners =="
+    sudo ss -tulpen | grep -vE '127\.0\.0\.1|::1|0\.0\.0\.0' || echo "No external listeners"
+}
+
+# 4. Suspicious processes (packet sniffers, remote desktop, rootkits)
+function listSuspiciousProcesses() {
+    echo "== Suspicious Processes =="
+    sudo ps | egrep -i '(xrdp)|(vnc)|(x11vnc)|(x0vncserver)|(gnome-remote-desktop)|(teamviewer)|(anydesk)|(tcpdump)|(wireshark)|(ncat)|(socat)|(nc)|(rootkit)'
+}
+
+# 5. Integrity check (package verification)
+function dpgkVerify() {
+    echo "== dpkg Verification =="
+    sudo dpkg -V | grep -E '^\?\?' || echo "No modified package files detected"
+    echo "== debsums Verification =="
+    sudo debsums -s || echo "No package checksum errors"
+}
+
+# 6. Cloud-init status
+function cloudinitStatus() {
+    echo "== Cloud-init Status =="
+    cloud-init status --long 2>/dev/null || echo "cloud-init not installed"
+    systemctl is-enabled cloud-init 2>/dev/null || echo "cloud-init not installed"
+    systemctl cat cloud-init.service 2>/dev/null | grep Condition || echo "cloud-init not installed"
+}
+
+# 7. rkhunter scan
+function scanRKHunter() {
+    echo -e "${BLUE}== Running rkhunter ==${RESET}"
+    echo -e "${YELLOW}(Don't forget to set your --pkgmgr in .bashrcfunctions. default is DPKG for Debian/Ubuntu)${RESET}"
+    sleep 1
+    local TIMESTAMP=$(date +%Y-%m-%d_%H%M%S)
+    local LOGFILE="$HOME/logs/rkhunter_$TIMESTAMP.log"
+    echo "Saving to log file: $LOGFILE"
+    sudo rkhunter --update
+    sudo rkhunter --check --sk --pkgmgr DPKG --display-logfile --logfile "$LOGFILE" --verbose-logging --enable all
+}
+
+# 8. Kernel/firmware update status
+function updateFirmware() {
+    echo "== Kernel & Firmware Packages =="
+    dpkg -l | grep -E '^ii\s+linux-(image)|(modules)|(headers)'
+    sudo fwupdmgr get-devices
+    sudo fwupdmgr get-updates
+}
+
+function fixpermissions() {
+    # Display help if requested
+    if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+        echo "fixpermissions - Recursively set file and folder permissions"
+        echo ""
+        echo "Usage: fixpermissions <path> [file_permissions] [folder_permissions]"
+        echo ""
+        echo "Parameters:"
+        echo "  path                Required. Directory to process recursively"
+        echo "  file_permissions    Optional. Permissions for files (default: 644)"
+        echo "  folder_permissions  Optional. Permissions for folders (default: 755)"
+        echo ""
+        echo "Examples:"
+        echo "  fixpermissions /var/www              # Use defaults (644 for files, 755 for folders)"
+        echo "  fixpermissions /home/user 664       # Files: 664, Folders: 755 (default)"
+        echo "  fixpermissions /tmp 666 777         # Files: 666, Folders: 777"
+        echo ""
+        echo "Note: This function also changes ownership to the current user (\$USER)"
+        return 0
+    fi
+
+    if [ -z "$1" ]; then
+        echo "Error: No folder specified."
+        echo "Usage: fixpermissions /path/to/folder [file_permissions] [folder_permissions]"
+        echo "Use 'fixpermissions -h' for detailed help."
+        return 1
+    elif [ "$1" == "/" ]; then
+        echo "Error: Refusing to run on root directory '/' for safety."
+        return 1
+    elif [ "$1" == ".." ]; then
+        echo "Error: Refusing to run on parent directory '..' for safety."
+        return 1
+    elif [ "$1" == "." ]; then
+        echo "Error: Refusing to run on current directory '.' for safety. (use $PWD instead)"
+        return 1
+    elif [ "$1" == "~" ]; then
+        echo "Error: Refusing to run on home directory '~' for safety."
+    fi
+
+    if [ ! -d "$1" ]; then
+        echo "Error: '$1' is not a valid directory."
+        return 1
+    fi
+
+    # Set default file permissions (644) or use provided value
+    if [[ "$2" == "" ]]; then
+        FILEPERMISSIONS=644
+        echo -e "${YELLOW}Using default file permissions: ${BLUE}644${RESET}"
+    else
+        FILEPERMISSIONS=$2
+        echo -e "${GREEN}Setting file permissions to ${BLUE}$FILEPERMISSIONS${RESET}"
+    fi
+    
+    # Set default folder permissions (755) or use provided value
+    if [[ "$3" == "" ]]; then
+        FOLDERPERMISSIONS=755
+        echo -e "${YELLOW}Using default folder permissions: ${BLUE}755${RESET}"
+    else
+        FOLDERPERMISSIONS=$3
+        echo -e "${GREEN}Setting folder permissions to ${BLUE}$FOLDERPERMISSIONS${RESET}"
+    fi
+    
+    echo -e "${GREEN}Processing recursively in folder: ${BLUE}$1${RESET}\n"
+    echo "Resetting ownership to '$USER' and fixing permissions in: $1"
+
+    # Reset ownership (user:group)
+    sudo chown -R "$USER:$USER" "$1"
+
+    # Set file permissions
+    sudo find "$1" -type f -exec chmod $FILEPERMISSIONS {} \;
+
+
+    # Set directory permissions  
+    sudo find "$1" -type d -exec chmod $FOLDERPERMISSIONS {} \;
+
+    echo "Permissions and ownership fixed for: $1"
+    echo -e "${GREEN}Files: ${BLUE}$FILEPERMISSIONS${RESET}, Folders: ${BLUE}$FOLDERPERMISSIONS${RESET}, Owner: ${BLUE}$USER${RESET}"
+}
+
+
+function setPrompt1(){
+	local RESET="\[\e[0m\]"
+	local BOLD="\[\e[1m\]"
+	local RED="\[\e[31m\]"
+	local GREEN="\[\e[32m\]"
+	local YELLOW="\[\e[33m\]"
+	local BLUE="\[\e[34m\]"
+	local MAGENTA="\[\e[35m\]"
+	local CYAN="\[\e[36m\]"
+	local WHITE="\[\e[37m\]"
+	local BG_GRAY="\[\e[48;5;236m\]"
+	local BG_BLUE="\[\e[48;5;24m\]"
+	local BG_GREEN="\[\e[48;5;22m\]"
+	local BG_MAGENTA="\[\e[48;5;53m\]"
+
+	PS1=""
+	# Short path (last two segments)
+	function shortpart(){
+		local IFS='/'
+		read -ra ADDR <<< "$PWD"
+		local len=${#ADDR[@]}
+		if (( len > 2 )); then
+			echo "${ADDR[len-2]}/${ADDR[len-1]}"
+		else
+			echo "$PWD"
+		fi
+	}
+	# function to set terminal title
+	function set_window_title(){
+		if [[ -z "$ORIG" ]]; then
+			ORIG=$PS1
+		fi
+		TITLE="\[\e]2;$*\a\]"
+		PS1+=${TITLE}
+	}
+
+    LANIP="enp0s31f6"
+    LOCALIP=$(/sbin/ifconfig $LANIP | grep "inet $LANIP" | awk -F: '{print $2}' | awk '{print $1}')
+
+	# Set window title to a plain version
+	local plain_title="${USER}@${HOSTNAME}: /$(shortpart)"
+	WHITE_ON_BLUE="\e[0;37;44m"
+    YELLOW_ON_BLUE="\e[1;33;44m"
+	GREEN_ON_BLUE="\e[0;32;44m"
+	WHITE_ON_GREEN="\e[1;37;42m"
+	BLUE_ON_WHITE="\e[1;34;47m"
+	GREEN_ON_GRAY="\e[0;32;40m"
+    PS1="${WHITE_ON_BLUE}${BOLD} ${weekday} | ${RESET}"
+    PS1+="${YELLOW_ON_BLUE} \t ${RESET}"
+    PS1+="${WHITE_ON_GREEN}${BOLD} ${USER} ${RESET}"
+    PS1+="${GREEN_ON_GRAY}${CYAN}@\w:${RESET}"
+    PS1+="${BOLD}${GREEN_ON_GREY}❯${RESET}"
+}
+
+function setPrompt2(){
+
+	PS1=""
+	# Short path (last two segments)
+	function shortpart(){
+		local IFS='/'
+		read -ra ADDR <<< "$PWD"
+		local len=${#ADDR[@]}
+		if (( len > 2 )); then
+			echo "${ADDR[len-2]}/${ADDR[len-1]}"
+		else
+			echo "$PWD"
+		fi
+	}
+	# function to set terminal title
+	function set_window_title(){
+		if [[ -z "$ORIG" ]]; then
+			ORIG=$PS1
+		fi
+		TITLE="\[\e]2;$*\a\]"
+		PS1+=${TITLE}
+	}
+
+
+		# Set window title to a plain version
+	local plain_title="${USER}@${HOSTNAME}: /$(shortpart)"
+
+	local weekday=$(date +%a)
+
+    # Color codes
+    CYAN='\[\e[1;36m\]'
+    YELLOW='\[\e[0;33m\]'
+    GREEN='\[\e[0;32m\]'
+    RED='\[\e[0;31m\]'
+    RESET='\[\e[0m\]'
+
+    # PS1 Prompt
+    export PS1="${GREEN}\u@\h ${CYAN}\w ${YELLOW}\A ${RED}\$ ${RESET}"
+
+}
+
+function bashrcHelp(){
+    # Define colors for better readability
+    local BOLD="\e[1m"
+    local BLUE="\e[34m"
+    local GREEN="\e[32m"
+    local YELLOW="\e[33m"
+    local MAGENTA="\e[35m"
+    local CYAN="\e[36m"
+    local WHITE="\e[37m"
+    local RED="\e[31m"
+    local RESET="\e[0m"
+
+    echo -e "${BOLD}${BLUE}🚀 Pretty Bashrc Functions - Your Enhanced Terminal Toolkit${RESET}"
+    echo -e "${CYAN}Run 'bashrcHelp' anytime to see this help. Use <function> -h for detailed help.${RESET}"
+    echo ""
+    
+    echo -e "${BOLD}${GREEN}🔍 SEARCH & FIND:${RESET}"
+    echo -e "  ${YELLOW}searchf <pattern>${RESET}              - Find files by name pattern"
+    echo -e "  ${YELLOW}searchinf <text> [pattern] [-i]${RESET} - Search text inside files"
+    echo ""
+    
+    echo -e "${BOLD}${GREEN}📖 DOCUMENTATION & MANUALS:${RESET}"
+    echo -e "  ${YELLOW}manfind <cmd> <text>${RESET}           - Jump to text in manual pages"
+    echo -e "  ${YELLOW}xman <command>${RESET}                 - Open graphical manual pages"
+    echo ""
+    
+    echo -e "${BOLD}${GREEN}🎥 VIDEO PROCESSING:${RESET}"
+    echo -e "  ${YELLOW}video_rotate_save_meta <file> [deg]${RESET} - View/modify video rotation metadata"
+    echo -e "  ${YELLOW}rotate_video_90_cw <in> <out>${RESET}       - Rotate video 90° clockwise"
+    echo -e "  ${YELLOW}rotate_video_90_anti_cw <in> <out>${RESET}  - Rotate video 90° counter-clockwise"
+    echo -e "  ${YELLOW}rotate_video_180 <in> <out>${RESET}         - Rotate video 180°"
+    echo ""
+    
+    echo -e "${BOLD}${GREEN}🛡️ SECURITY & SYSTEM MONITORING:${RESET}"
+    echo -e "  ${RED}kernelTainted${RESET}                   - Check kernel security status"
+    echo -e "  ${RED}findSuidSgidfiles${RESET}               - Find SUID/SGID files (security risk)"
+    echo -e "  ${RED}listListeners${RESET}                   - Show active network listeners"
+    echo -e "  ${RED}listSuspiciousProcesses${RESET}         - Detect suspicious processes"
+    echo -e "  ${RED}dpgkVerify${RESET}                      - Verify package integrity"
+    echo -e "  ${RED}cloudinitStatus${RESET}                 - Check cloud-init status"
+    echo -e "  ${RED}scanRKHunter${RESET}                    - Run comprehensive rootkit scan"
+    echo -e "  ${RED}updateFirmware${RESET}                  - Check kernel/firmware updates"
+    echo ""
+    
+    echo -e "${BOLD}${GREEN}📁 FILE & PERMISSION MANAGEMENT:${RESET}"
+    echo -e "  ${CYAN}fixpermissions <path> [file] [dir]${RESET} - Fix file/folder permissions recursively"
+    echo -e "  ${RED}shredfolder <path>${RESET}                - Securely delete folder & contents"
+    echo -e "  ${YELLOW}extract <archive>${RESET}                 - Auto-extract various archive formats"
+    echo ""
+    
+    echo -e "${BOLD}${GREEN}🎨 PROMPT CUSTOMIZATION:${RESET}"
+    echo -e "  ${MAGENTA}setPrompt1${RESET}                      - Fancy colored prompt with time/user/path"
+    echo -e "  ${MAGENTA}setPrompt2${RESET}                      - Simple colored prompt"
+    echo ""
+    
+    echo -e "${BOLD}${GREEN}🐍 PYTHON DEVELOPMENT:${RESET}"
+    echo -e "  ${CYAN}create_and_activate_venv_here [dir]${RESET} - Create & activate Python virtual env"
+    echo ""
+    
+    echo -e "${BOLD}${GREEN}🌐 NETWORK & SYSTEM INFO:${RESET}"
+    echo -e "  ${BLUE}netinfo${RESET}                         - Display network information"
+    echo -e "  ${BLUE}whatsmyip${RESET} / ${BLUE}whatismyip${RESET}          - Show internal/external IPs"
+    echo -e "  ${BLUE}get_pid_from_port <port|--all>${RESET}   - Get process info for port(s)"
+    echo ""
+    
+    echo -e "${BOLD}${GREEN}🔧 UTILITIES:${RESET}"
+    echo -e "  ${WHITE}json-generator key1 val1 key2 val2${RESET} - Generate JSON from key-value pairs"
+    echo -e "  ${WHITE}string_remove_dupes <string>${RESET}       - Remove duplicate words from string"
+    echo ""
+    
+    echo -e "${BOLD}${YELLOW}💡 TIPS:${RESET}"
+    echo -e "  • Use ${CYAN}-h${RESET} or ${CYAN}--help${RESET} with most functions for detailed usage"
+    echo -e "  • Default permissions: Files ${CYAN}644${RESET}, Directories ${CYAN}755${RESET}"
+    echo -e "  • Security functions (🛡️) require elevated privileges"
+    echo -e "  • Video functions require ${CYAN}ffmpeg${RESET} and ${CYAN}exiftool${RESET}"
+    echo ""
+    echo -e "${BOLD}${BLUE}📚 Full documentation available in README.md${RESET}"
+
+}
+
+# bashrcHelp  # Uncomment to show help on source - commented to avoid double execution
+
+shredfolder() {
+    if [ -z "$1" ]; then
+	echo "Error: No folder specified."
+	echo "Usage: shredfolder /path/to/folder"
+	return 1
+    fi
+
+    if [ ! -d "$1" ]; then
+	echo "Error: '$1' is not a valid directory."
+	return 1
+    fi
+
+    echo "Shredding all files in: $1"
+    find "$1" -type f -exec shred -v -n 3 -z -u {} \;
+
+    echo "Removing folder structure: $1"
+    rm -rf "$1"
+
+    echo "Done. All files shredded and folder deleted."
+}
+
+create_and_activate_venv_here() {
+    if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+        echo "Usage: create_and_activate_venv_here [venv_dir]"
+        echo ""
+        echo "Creates a Python virtual environment in the specified directory and activates it."
+        echo "If venv_dir is not provided, it defaults to '.venv'."
+        echo ""
+        echo "Requirements:"
+        echo "  - Python 3 must be installed and available in PATH."
+        echo ""
+        echo "Examples:"
+        echo "  create_and_activate_venv_here          # Creates and activates .venv"
+        echo "  create_and_activate_venv_here myenv    # Creates and activates myenv"
+        return 0
+    fi
+
+    local venv_dir="${1:-.venv}"
+    local python_bin="$(command -v python3)"
+
+    if [[ -z "$python_bin" ]]; then
+        echo "Python3 not found in PATH."
+        return 1
+    fi
+
+    if [[ -d "$venv_dir" ]]; then
+        echo "Virtual environment '$venv_dir' already exists."
+    else
+        "$python_bin" -m venv "$venv_dir"
+        if [[ $? -ne 0 ]]; then
+            echo "Failed to create virtual environment."
+            return 2
+        fi
+        echo "Virtual environment created at ./$venv_dir"
+    fi
+
+    # Activate the virtual environment
+    # shellcheck source=/dev/null
+    source "$venv_dir/bin/activate"
+    if [[ $? -ne 0 ]]; then
+        echo "Failed to activate virtual environment."
+        return 3
+    fi
+
+    echo -e "Virtual environment: $1 has been created and activated.\nPath to venv: $venv_dir."
+}
+# ============================================================================
+# JSON GENERATOR FUNCTION
+# ============================================================================
+#
+# DESCRIPTION:
+#   A powerful bash function that converts key-value pairs into properly
+#   formatted JSON output using jq. The function intelligently detects data
+#   types and formats them correctly in the resulting JSON.
+#
+# USAGE:
+#   json key1 value1 key2 value2 [key3 value3 ...]
+#
+# PARAMETERS:
+#   Takes an even number of arguments where each pair represents:
+#   - Odd arguments (1st, 3rd, 5th...): JSON keys (strings)
+#   - Even arguments (2nd, 4th, 6th...): JSON values (auto-typed)
+#
+# DATA TYPE DETECTION:
+#   The function automatically detects and properly formats these data types:
+#
+#   INTEGERS:     Numbers without decimal points (e.g., 42, -15, 0)
+#   FLOATS:       Numbers with decimal points (e.g., 3.14, -0.5, 19.99)
+#   BOOLEANS:     true/TRUE/True/false/FALSE/False (case-insensitive)
+#   NULL:         The literal string "null"
+#   STRINGS:      Everything else, including:
+#                 - Text with spaces: "Hello World"
+#                 - Numbers with leading zeros: "001", "007"
+#                 - Phone numbers: "123-456-7890"
+#                 - Version strings: "2.0.1"
+#                 - Special characters: "@#$%^&*()"
+#
+# EXAMPLES:
+#   # Simple string and number
+#   json name "John Doe" age 30
+#   # Output: {"name": "John Doe", "age": 30}
+#
+#   # Mixed data typestr -s /'\n/' " "
+#   json user "Alice" active true score 95.5 email null
+#   # Output: {"user": "Alice", "active": true, "score": 95.5, "email": null}
+#
+#   # Preserving leading zeros and special formats
+#   json id "001" phone "555-1234" version "2.0.1"
+#   # Output: {"id": "001", "phone": "555-1234", "version": "2.0.1"}
+#
+#   # Boolean variations (all case-insensitive)
+#   json verified TRUE completed false pending True
+#   # Output: {"verified": true, "completed": false, "pending": true}
+#
+#   # Empty JSON object
+#   json
+#   # Output: {}
+#
+# FEATURES:
+#   ✓ Automatic data type detection and conversion
+#   ✓ Proper JSON escaping for strings with quotes and special characters
+#   ✓ Handles negative numbers and floating-point values
+#   ✓ Case-insensitive boolean detection
+#   ✓ Preserves leading zeros in strings (e.g., "001" stays as string)
+#   ✓ Error handling for odd number of arguments
+#   ✓ Clean, formatted JSON output via jq
+#   ✓ Support for null values
+#   ✓ No limit on number of key-value pairs
+#
+# ERROR HANDLING:
+#   - If an odd number of arguments is provided, a warning is displayed
+#     and the orphaned key is ignored
+#   - Invalid input is gracefully handled with informative error messages
+#
+# DEPENDENCIES:
+#   Requires 'jq' to be installed and available in PATH
+#
+# RETURN VALUE:
+#   Outputs valid JSON to stdout, or "{}" for empty input
+#
+# ============================================================================
+json-generator() {
+    local -a jq_args=()    # Stores --arg key1 val1 --arg key2 val2 ...
+    local -a jq_fields=()  # Stores "key1": $key1, "key2": ($key2 | tonumber), etc.
+
+    # Loop through arguments in pairs (key value)
+    for ((i = 1; i <= $#; i += 2)); do
+        # Check if we have both key and value
+        if [[ $i -gt $# ]]; then
+            break
+        fi
+
+        local key="${!i}"
+        local next_index=$((i + 1))
+
+        # Check if we have a value for this key
+        if [[ $next_index -gt $# ]]; then
+            echo "Warning: Key '$key' has no corresponding value" >&2
+            break
+        fi
+
+        local val="${!next_index}"
+
+        # Add to jq arguments
+        jq_args+=("--arg" "$key" "$val")
+
+        # Detect value type and format accordingly
+        if [[ "$val" =~ ^-?[1-9][0-9]*$ ]] || [[ "$val" == "0" ]]; then
+            # Integer (no leading zeros except for "0")
+            jq_fields+=("\"$key\": (\$$key | tonumber)")
+        elif [[ "$val" =~ ^-?([1-9][0-9]*|0)\.[0-9]+$ ]]; then
+            # Float (no leading zeros except for "0")
+            jq_fields+=("\"$key\": (\$$key | tonumber)")
+        elif [[ "$val" =~ ^[Tt][Rr][Uu][Ee]$ ]]; then
+            # Boolean true
+            jq_fields+=("\"$key\": true")
+        elif [[ "$val" =~ ^[Ff][Aa][Ll][Ss][Ee]$ ]]; then
+            # Boolean false
+            jq_fields+=("\"$key\": false")
+        elif [[ "$val" == "null" ]]; then
+            # Null value
+            jq_fields+=("\"$key\": null")
+        else
+            # String (default)
+            jq_fields+=("\"$key\": \$$key")
+        fi
+    done
+
+    # Build and execute the jq command
+    if [[ ${#jq_fields[@]} -gt 0 ]]; then
+        local fields_str
+        IFS=', '
+        fields_str="${jq_fields[*]}"
+        jq -n "${jq_args[@]}" "{ $fields_str }"
+    else
+        echo "{}"
+    fi
+}
+
+string_remove_dupes() {
+    local input="$1"
+    local -A seen
+    local output=""
+    local index=0
+    # Use read with -a to split into words properly
+    read -ra words <<< "$input"
+
+    for word in "${words[@]}"; do
+        if [[ -z "${seen[$word]}" ]]; then
+            seen["$word"]=1
+            output+="$word "
+        fi
+    done
+
+    # Trim trailing space and return the result
+    echo "${output%" "}"
+}
+get_pid_from_port() {
+    local PORT="$1"
+    local -a PIDARRAY=()
+    local -a NAMEARRAY=()
+    local target_port="$PORT"
+    local retval=1
+
+    if [[ "$PORT" == "-a" || "$PORT" == "--all" ]]; then
+        target_port="all"
+        echo "🔍 Showing all PIDs for all listening ports..."
+        mapfile -t PIDARRAY < <(sudo lsof -nP -iTCP -sTCP:LISTEN -t 2>/dev/null)
+    else
+        echo "🔍 Getting PID(s) for port: $PORT"
+        mapfile -t PIDARRAY < <(sudo lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null)
+    fi
+
+    if [[ ${#PIDARRAY[@]} -eq 0 ]]; then
+        json_generator \
+            port "$target_port" \
+            pids "[]" \
+            processes "[]" \
+            message "No processes found listening on port $target_port"
+        return 1
+    fi
+
+    for pid in "${PIDARRAY[@]}"; do
+        local procname
+        procname=$(ps -p "$pid" -o comm= 2>/dev/null)
+        [[ -n "$procname" ]] && NAMEARRAY+=("$procname")
+    done
+
+
+    local unique_pids unique_names
+    unique_pids=$(string_remove_dupes "${PIDARRAY[*]}")
+    unique_names=$(string_remove_dupes "${NAMEARRAY[*]}")
+
+    # Format arrays for JSON output
+    local json_pids_array json_names_array
+    if [[ -n "$unique_pids" ]]; then
+        json_pids_array="[\"$(echo "$unique_pids" | sed 's/ /", "/g')\"]"
+    else
+        json_pids_array="[]"
+    fi
+    
+    if [[ -n "$unique_names" ]]; then
+        json_names_array="[\"$(echo "$unique_names" | sed 's/ /", "/g')\"]"
+    else
+        json_names_array="[]"
+    fi
+
+    # Generate proper JSON output using json-generator
+    json-generator \
+        port "$target_port" \
+        pids "$json_pids_array" \
+        processes "$json_names_array" \
+        message "Found processes listening on port $target_port"
+}
+# Extracts any archive(s) (if unp isn't installed)
+extract () {
+    for archive in "$@"; do
+        if [ -f "$archive" ]; then
+            case "$archive" in
+                *.tar.bz2)   tar xvjf "$archive"    ;;
+                *.tar.gz)    tar xvzf "$archive"    ;;
+                *.bz2)       bunzip2 "$archive"     ;;
+                *.rar)       rar x "$archive"       ;;
+                *.gz)        gunzip "$archive"      ;;
+                *.tar)       tar xvf "$archive"     ;;
+                *.tbz2)      tar xvjf "$archive"    ;;
+                *.tgz)       tar xvzf "$archive"    ;;
+                *.zip)       unzip "$archive"       ;;
+                *.Z)         uncompress "$archive"  ;;
+                *.7z)        7z x "$archive"        ;;
+                *)           echo "don't know how to extract '$archive'..." ;;
+            esac
+        else
+            echo "'$archive' is not a valid file!"
+        fi
+    done
+}
+# Show current network information
+netinfo()
+{
+	echo "--------------- Network Information ---------------"
+	/sbin/ifconfig | awk '/inet / {print $2}'
+	echo ""
+	/sbin/ifconfig | awk '/BCast / {print $2}'
+	echo ""
+	/sbin/ifconfig | awk /'inet / {print $4}'
+
+	/sbin/ifconfig | awk /'HWaddr/ {print $4,$5}'
+	echo "---------------------------------------------------"
+}
+
+# IP address lookup
+alias whatismyip="whatsmyip"
+function whatsmyip()
+{
+	# Dumps a list of all IP addresses for every device
+	# /sbin/ifconfig |grep -B1 "inet addr" |awk '{ if ( $1 == "inet" ) { print $2 } else if ( $2 == "Link" ) { printf "%s:" ,$1 } }' |awk -F: '{ print $1 ": " $3 }';
+
+	# Internal IP Lookup
+	echo -n "Internal IP: " ; /sbin/ifconfig enp0s31f6 | grep "inet enp0s31f6" | awk -F: '{print $2}' | awk '{print $1}'
+
+	# External IP Lookup
+	echo -n "External IP: " ; wget http://smart-ip.net/myip -O - -q
+}
